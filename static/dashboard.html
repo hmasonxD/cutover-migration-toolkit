@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Cutover — Migration Status</title>
+<style>
+    :root {
+        color-scheme: light dark;
+    }
+
+    body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 640px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+    }
+
+    .card {
+        border: 1px solid #8884;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+    }
+
+    .metric {
+        font-size: 2rem;
+        font-weight: 600;
+    }
+
+    .label {
+        opacity: .7;
+        font-size: .85rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
+    .ok {
+        color: #16a34a;
+    }
+</style>
+<h1>Cutover — Municipal Migration Status</h1>
+<div class="card">
+    <div class="label">Properties migrated</div>
+    <div class="metric" data-testid="property-count">…</div>
+</div>
+<div class="card">
+    <div class="label">Total tax levy (cloud)</div>
+    <div class="metric" data-testid="levy-total">…</div>
+</div>
+<div class="card">
+    <div class="label">Status</div>
+    <div class="metric ok" data-testid="status">…</div>
+</div>
+<script>
+    async function load() {
+        const count = await (await fetch('/properties/count')).json();
+        document.querySelector('[data-testid=property-count]').textContent = count.count;
+        const levy = await (await fetch('/levy/total')).json();
+        document.querySelector('[data-testid=levy-total]').textContent =
+            '$' + Number(levy.total_tax_levy).toLocaleString('en-CA', { minimumFractionDigits: 2 });
+        document.querySelector('[data-testid=status]').textContent =
+            count.count > 0 ? 'Migration loaded' : 'No data';
+    }
+    load();
+</script>
