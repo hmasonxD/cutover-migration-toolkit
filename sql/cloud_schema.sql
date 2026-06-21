@@ -25,6 +25,14 @@ CREATE TABLE app.utility_transaction (
     amount NUMERIC(14, 2) NOT NULL
 );
 CREATE INDEX ix_util_txn_roll ON app.utility_transaction (roll_number);
+CREATE TABLE app.migration_exception (
+    id SERIAL PRIMARY KEY,
+    source_id INTEGER,
+    roll_no_raw TEXT,
+    entity TEXT NOT NULL CHECK (entity IN ('PROPERTY', 'TRANSACTION')),
+    reason TEXT NOT NULL,
+    logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 -- ---------------------------------------------------------------------------
 -- recon.account_running_balances()
 -- Window function: recompute each account's running ledger balance from first

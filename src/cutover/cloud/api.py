@@ -39,6 +39,11 @@ class TransactionIn(BaseModel):
     txn_type: str
     amount: Decimal
 
+class ExceptionIn(BaseModel):
+    source_id: Optional[int] = None
+    roll_no_raw: Optional[str] = None
+    entity: str
+    reason: str
 
 class BulkResult(BaseModel):
     inserted: int = Field(..., description="rows written")
@@ -86,6 +91,26 @@ def ingest_transactions(items: list[TransactionIn]) -> BulkResult:
                 cur,
                 """INSERT INTO app.utility_transaction
                    (roll_number, txn_date, txn_type, amount) VALUES %s
+                   RETURNING id""",
+                rows,
+                page_size=len(rows) or 1,
+                fetch=True,
+            )
+            inserted = len(returned)
+        conn.commit()
+    return BulkResult(inserted=inserted)
+
+@app.post("/exceptions/bulk", response_model=BulkResult)
+def ingest_exceptions(items: list[ExceptionIn]) -> BulkResult:
+    if not items:
+        return BulkResult(inserted=0)
+    rows = [(i.source_id, i.roll_no_raw, i.entity, i.reason) for i in items]
+    with db.cloud_conn() as conn:
+        with conn.cursor() as cur:
+            returned = psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO app.migration_exception
+                   (source_id, roll_no_raw, entity, reason) VALUES %s
                    RETURNING id""",
                 rows,
                 page_size=len(rows) or 1,
@@ -163,6 +188,72 @@ def recon_summary() -> dict:
         "duplicate_count": len({d["roll_digits"] for d in duplicates}),
         "balance_exception_count": len(balance_exc),
     }
+
+@app.get("/properties")
+def list_properties(limit: int = 50, offset: int = 0, search: str = "") -> dict:
+    """Paginated list of migrated properties, optionally filtered by roll or owner."""
+    where, params = "", []
+    if search:
+        where = "WHERE roll_number ILIKE %s OR owner_name ILIKE %s"
+        params = [f"%{search}%", f"%{search}%"]
+    with db.cloud_conn() as conn:
+        total = db.query_value(conn, f"SELECT count(*) FROM app.property {where}", tuple(params) or None)
+        rows = db.query_all(
+            conn,
+            f"""SELECT roll_number, owner_name, address, assessed_value, tax_levy, status, last_payment_date
+                FROM app.property {where}
+                ORDER BY roll_number LIMIT %s OFFSET %s""",
+            tuple(params) + (limit, offset),
+        )
+    for r in rows:
+        r["assessed_value"] = str(r["assessed_value"])
+        r["tax_levy"] = str(r["tax_levy"])
+        r["last_payment_date"] = r["last_payment_date"].isoformat() if r["last_payment_date"] else None
+    return {"total": total, "limit": limit, "offset": offset, "items": rows}
+
+
+@app.get("/exceptions")
+def list_exceptions() -> dict:
+    """The migration exception log - quarantined rows with their reasons."""
+    with db.cloud_conn() as conn:
+        rows = db.query_all(
+            conn,
+            """SELECT source_id, roll_no_raw, entity, reason
+               FROM app.migration_exception ORDER BY entity, source_id""",
+        )
+    return {"total": len(rows), "items": rows}
+
+
+@app.get("/compare/{rec_id}")
+def compare_record(rec_id: int) -> dict:
+    """Before/after view: a raw legacy row next to its cleansed cloud form."""
+    from ..etl.transform import transform_property_row, TransformError
+
+    with db.legacy_conn() as conn:
+        legacy_rows = db.query_all(conn, "SELECT * FROM legacy.tax_master WHERE rec_id = %s", (rec_id,))
+    if not legacy_rows:
+        raise HTTPException(status_code=404, detail="legacy record not found")
+    raw = legacy_rows[0]
+
+    before = {
+        "roll_no": raw["roll_no"], "owner_name": raw["owner_name"], "prop_addr": raw["prop_addr"],
+        "assessed_val": raw["assessed_val"], "tax_levy": raw["tax_levy"],
+        "status_cd": raw["status_cd"], "last_pay_dt": raw["last_pay_dt"],
+    }
+    try:
+        clean = transform_property_row(raw)
+        after = {
+            "roll_number": clean.roll_number, "owner_name": clean.owner_name, "address": clean.address,
+            "assessed_value": str(clean.assessed_value), "tax_levy": str(clean.tax_levy),
+            "status": clean.status,
+            "last_payment_date": clean.last_payment_date.isoformat() if clean.last_payment_date else None,
+        }
+        error = None
+    except TransformError as exc:
+        after, error = None, str(exc)
+
+    return {"rec_id": rec_id, "before": before, "after": after, "error": error}
+
 
 @app.get("/")
 def dashboard() -> FileResponse:

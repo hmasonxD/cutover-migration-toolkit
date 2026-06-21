@@ -53,6 +53,15 @@ def _transform_transactions(rows: list[dict]):
             )
     return clean, exceptions
 
+def _load_exceptions(exceptions, entity: str, client: httpx.Client) -> None:
+    if not exceptions:
+        return
+    payload = [
+        {"source_id": e.source_id, "roll_no_raw": e.roll_no_raw, "entity": entity, "reason": e.reason}
+        for e in exceptions
+    ]
+    resp = client.post("/exceptions/bulk", json=payload)
+    resp.raise_for_status()
 
 def run_migration(client: httpx.Client | None = None) -> MigrationSummary:
     owns_client = client is None
@@ -65,6 +74,9 @@ def run_migration(client: httpx.Client | None = None) -> MigrationSummary:
         ledger_rows = extract.extract_util_ledger()
         clean_txns, txn_exc = _transform_transactions(ledger_rows)
         loaded_txns = load.load_transactions(clean_txns, client=client)
+        
+        _load_exceptions(result.exceptions, "PROPERTY", client)
+        _load_exceptions(txn_exc, "TRANSACTION", client)
 
         return MigrationSummary(
             properties_extracted=len(tax_rows),
