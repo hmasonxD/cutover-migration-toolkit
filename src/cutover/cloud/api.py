@@ -139,6 +139,30 @@ def account_balances() -> dict:
         )
     return {"balances": {r["roll_number"]: str(r["final_balance"]) for r in rows}}
 
+@app.get("/recon/summary")
+def recon_summary() -> dict:
+    """Live reconciliation summary for the dashboard: the control checks plus
+    counts of duplicates and balance exceptions found in the legacy data."""
+    from ..reconcile import api_validator
+
+    checks = api_validator.run_all_checks()
+    duplicates = api_validator.find_duplicate_rolls()
+    balance_exc = api_validator.find_balance_exceptions()
+    return {
+        "checks": [
+            {
+                "name": c.name,
+                "passed": c.passed,
+                "legacy": str(c.legacy_value),
+                "cloud": str(c.cloud_value),
+                "detail": c.detail,
+            }
+            for c in checks
+        ],
+        "all_passed": all(c.passed for c in checks),
+        "duplicate_count": len({d["roll_digits"] for d in duplicates}),
+        "balance_exception_count": len(balance_exc),
+    }
 
 @app.get("/")
 def dashboard() -> FileResponse:
