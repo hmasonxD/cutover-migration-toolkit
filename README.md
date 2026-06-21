@@ -39,6 +39,16 @@ stored balance drifted from its true transaction history. Five rows are
 quarantined as exceptions (with reasons); the balance drift is found by a window
 function recomputing the ledger from first principles.
 
+## Screenshots
+
+**Live migration explorer** — reconciliation status, migrated records, exception log, and a before/after cleansing view, all served live from the API.
+
+![Migration dashboard](docs/dashboard.png)
+
+**Before / after cleansing** — every legacy field shown raw next to its cleansed cloud value. Bad rows are rejected with a reason rather than silently dropped.
+
+![Before and after cleansing](docs/cleansing.png)
+
 ## Stack
 
 - **Python 3.12**, **PyTest** (unit, integration, and Playwright e2e)
@@ -93,3 +103,12 @@ Unit tests cover every cleansing rule and its failure modes. Integration tests
 run the real extract/transform/load path against Postgres and the API, then run
 every reconciliation check. The e2e test boots the API and drives a headless
 browser over the dashboard.
+
+## What this demonstrates
+
+- **Python + test automation** — PyTest across unit, integration, and Playwright e2e layers, run in CI on every push.
+- **API-based validation** — the migration loads through a FastAPI cloud target, and reconciliation queries that API and checks it against legacy SQL.
+- **Advanced PostgreSQL** — CTEs, window functions, PL/pgSQL stored procedures, and dynamic SQL drive the reconciliation and anomaly detection.
+- **ETL & data cleansing** — pure, unit-tested rules normalize dirty legacy text (money, dates, roll numbers, names, status codes) into typed cloud records.
+- **Reconciliation & exception reporting** — record-count parity, financial control totals, key-field verification, duplicate detection, and a persisted exception log.
+- **CI/CD** — GitHub Actions provisions a real Postgres, runs the full suite, and gates every change.
