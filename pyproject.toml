@@ -29,3 +29,9 @@ testpaths = ["tests"]
 markers = [
     "e2e: end-to-end browser tests (require a Playwright browser)",
 ]
+filterwarnings = [
+    "error",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
+    "ignore::DeprecationWarning:websockets.legacy",
+    "ignore::DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
+]
