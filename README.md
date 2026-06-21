@@ -1,3 +1,5 @@
+[![CI](https://github.com/hmasonxD/cutover-migration-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/hmasonxD/cutover-migration-toolkit/actions/workflows/ci.yml)
+
 # Cutover — Municipal ERP Data Migration & Reconciliation Toolkit
 
 Cutover migrates messy municipal property-tax and utility data out of a legacy
