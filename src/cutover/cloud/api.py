@@ -154,6 +154,31 @@ def levy_total() -> dict:
     return {"total_tax_levy": str(total)}
 
 
+@app.get("/recon/by-class")
+def recon_by_class() -> dict:
+    """Parcel count and assessed value per assessment class, as the cloud holds
+    them - the cloud side of the class-code reconciliation."""
+    with db.cloud_conn() as conn:
+        rows = db.query_all(
+            conn,
+            """SELECT assessment_class, count(*) AS parcels,
+                      COALESCE(SUM(assessed_value), 0) AS assessed_total
+               FROM app.property
+               GROUP BY assessment_class
+               ORDER BY assessment_class""",
+        )
+    return {
+        "classes": [
+            {
+                "assessment_class": r["assessment_class"],
+                "parcels": r["parcels"],
+                "assessed_total": str(r["assessed_total"]),
+            }
+            for r in rows
+        ]
+    }
+    
+
 @app.get("/accounts/balances")
 def account_balances() -> dict:
     """Closing ledger balance per account, computed in-cloud via the
