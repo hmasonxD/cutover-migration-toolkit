@@ -10,10 +10,10 @@ from cutover import db
 
 
 def test_exceptions_persisted_to_table(migrated):
-    """The 5 injected property defects should be written to migration_exception."""
+    """The 6 injected property defects should be written to migration_exception."""
     with db.cloud_conn() as conn:
         n = db.query_value(conn, "SELECT count(*) FROM app.migration_exception WHERE entity = 'PROPERTY'")
-    assert n == 5
+    assert n == 6
 
 
 def test_exceptions_endpoint_returns_logged_rows(migrated, api_client):

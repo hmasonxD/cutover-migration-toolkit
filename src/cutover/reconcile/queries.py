@@ -26,6 +26,7 @@ WITH valid AS (
     WHERE length(regexp_replace(COALESCE(roll_no,''), '\D', '', 'g')) = 9
       AND COALESCE(trim(owner_name), '') <> ''
       AND upper(trim(status_cd)) IN ('A','I','P','X')
+      AND upper(trim(class_cd)) IN ('R','RES','NR','C','COM','F','FARM','ME','M&E')
       AND assessed_val ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
       AND tax_levy ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
       AND (

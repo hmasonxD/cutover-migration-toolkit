@@ -31,6 +31,7 @@ class PropertyIn(BaseModel):
     tax_levy: Decimal
     status: str
     last_payment_date: Optional[str] = None  # ISO date string or None
+    assessment_class: str
 
 
 class TransactionIn(BaseModel):
@@ -60,6 +61,7 @@ def ingest_properties(items: list[PropertyIn]) -> BulkResult:
         (
             i.roll_number, i.owner_name, i.address, i.assessed_value,
             i.tax_levy, i.status, i.last_payment_date or None,
+            i.assessment_class,
         )
         for i in items
     ]
@@ -69,7 +71,7 @@ def ingest_properties(items: list[PropertyIn]) -> BulkResult:
                 cur,
                 """INSERT INTO app.property
                    (roll_number, owner_name, address, assessed_value,
-                    tax_levy, status, last_payment_date)
+                    tax_levy, status, last_payment_date, assessment_class)
                    VALUES %s
                    ON CONFLICT (roll_number) DO NOTHING
                    RETURNING id""",
@@ -200,7 +202,7 @@ def list_properties(limit: int = 50, offset: int = 0, search: str = "") -> dict:
         total = db.query_value(conn, f"SELECT count(*) FROM app.property {where}", tuple(params) or None)
         rows = db.query_all(
             conn,
-            f"""SELECT roll_number, owner_name, address, assessed_value, tax_levy, status, last_payment_date
+            f"""SELECT roll_number, owner_name, address, assessed_value, tax_levy, status, last_payment_date, assessment_class
                 FROM app.property {where}
                 ORDER BY roll_number LIMIT %s OFFSET %s""",
             tuple(params) + (limit, offset),
@@ -239,6 +241,7 @@ def compare_record(rec_id: int) -> dict:
         "roll_no": raw["roll_no"], "owner_name": raw["owner_name"], "prop_addr": raw["prop_addr"],
         "assessed_val": raw["assessed_val"], "tax_levy": raw["tax_levy"],
         "status_cd": raw["status_cd"], "last_pay_dt": raw["last_pay_dt"],
+        "class_cd": raw["class_cd"],
     }
     try:
         clean = transform_property_row(raw)
@@ -247,6 +250,7 @@ def compare_record(rec_id: int) -> dict:
             "assessed_value": str(clean.assessed_value), "tax_levy": str(clean.tax_levy),
             "status": clean.status,
             "last_payment_date": clean.last_payment_date.isoformat() if clean.last_payment_date else None,
+            "assessment_class": clean.assessment_class,
         }
         error = None
     except TransformError as exc:

@@ -17,7 +17,9 @@ CREATE TABLE legacy.tax_master (
     tax_levy TEXT,
     status_cd TEXT,
     -- A / I / P / X (+ lowercase, nulls, junk)
-    last_pay_dt TEXT -- ISO, US, Oracle DD-MON-YY, or empty
+    last_pay_dt TEXT,
+    -- ISO, US, Oracle DD-MON-YY, or empty
+    class_cd TEXT -- R / RES / NR / C / COM / F / FARM / ME / M&E (mixed case)
 );
 CREATE TABLE legacy.util_ledger (
     txn_id SERIAL PRIMARY KEY,

@@ -15,6 +15,8 @@ random.seed(42)
 
 _FIRST = ["John", "Jane", "Robert", "Mary", "David", "Susan", "James", "Linda", "Michael", "Karen"]
 _LAST = ["Smith", "Johnson", "Tremblay", "Cardinal", "Gagnon", "Nguyen", "Macdonald", "Cote", "Singh", "Bouchard"]
+# Legacy spellings of the assessment class, weighted so most parcels are residential.
+_CLASS_CODES = ["R", "R", "RES", "r", "R", "NR", "C", "com", "F", "FARM", "ME", "M&E"]
 _STREETS = ["Main St", "Railway Ave", "1st Ave", "Lakeshore Dr", "Centre St", "5 Range Rd", "Township Rd 540"]
 
 
@@ -75,7 +77,8 @@ def generate(num_clean: int = 120) -> None:
                 levy = round(assessed * 0.0125, 2)
                 status = random.choice(["A", "A", "A", "I", "P", "X", "a", "i"])
                 pay = _date(2024, random.randint(1, 12), random.randint(1, 28)) if random.random() < 0.8 else ""
-                tax_rows.append((roll, owner, addr, _money(assessed), _money(levy), status, pay))
+                class_cd = _CLASS_CODES[i % len(_CLASS_CODES)]
+                tax_rows.append((roll, owner, addr, _money(assessed), _money(levy), status, pay, class_cd))
 
                 # ledger: a charge then a payment; stored balance usually correct
                 roll_digits = f"{roll_n:09d}"
@@ -88,17 +91,20 @@ def generate(num_clean: int = 120) -> None:
             # --- injected defects (exceptions the migration must surface) ---
             # 1. duplicate roll (same digits, different formatting)
             dup_digits = base_roll + 5
-            tax_rows.append((f"{dup_digits:09d}", "DUPLICATE, Owner", "1 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02"))
+            tax_rows.append((f"{dup_digits:09d}", "DUPLICATE, Owner", "1 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02", "R"))
             # 2. bad roll number (too few digits)
-            tax_rows.append(("12-34", "BADROLL, Person", "2 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02"))
+            tax_rows.append(("12-34", "BADROLL, Person", "2 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02", "R"))
             # 3. unparseable money
-            tax_rows.append(("002000000", "BADMONEY, Person", "3 Main St", "N/A", "$1,250.00", "A", "2024-02-02"))
+            tax_rows.append(("002000000", "BADMONEY, Person", "3 Main St", "N/A", "$1,250.00", "A", "2024-02-02", "R"))
             # 4. unknown status code
-            tax_rows.append(("002000001", "BADSTATUS, Person", "4 Main St", "$100,000.00", "$1,250.00", "Z", "2024-02-02"))
+            tax_rows.append(("002000001", "BADSTATUS, Person", "4 Main St", "$100,000.00", "$1,250.00", "Z", "2024-02-02", "R"))
             # 5. unrecognized date
-            tax_rows.append(("002000002", "BADDATE, Person", "5 Main St", "$100,000.00", "$1,250.00", "A", "someday"))
+            tax_rows.append(("002000002", "BADDATE, Person", "5 Main St", "$100,000.00", "$1,250.00", "A", "someday", "R"))
             # 6. missing owner name
-            tax_rows.append(("002000003", "", "6 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02"))
+            tax_rows.append(("002000003", "", "6 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02", "R"))
+
+            # 8. unknown assessment class code
+            tax_rows.append(("002000004", "BADCLASS, Person", "7 Main St", "$100,000.00", "$1,250.00", "A", "2024-02-02", "Q"))
 
             # 7. ledger balance drift: stored balance is wrong on purpose
             drift_roll_n = base_roll + 10
@@ -108,7 +114,7 @@ def generate(num_clean: int = 120) -> None:
             from psycopg2.extras import execute_values
             execute_values(
                 cur,
-                "INSERT INTO legacy.tax_master (roll_no, owner_name, prop_addr, assessed_val, tax_levy, status_cd, last_pay_dt) VALUES %s",
+                "INSERT INTO legacy.tax_master (roll_no, owner_name, prop_addr, assessed_val, tax_levy, status_cd, last_pay_dt, class_cd) VALUES %s",
                 tax_rows,
             )
             execute_values(

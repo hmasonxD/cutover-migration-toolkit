@@ -22,6 +22,7 @@ def _serialize_property(p: CleanProperty) -> dict:
         "tax_levy": str(p.tax_levy),
         "status": p.status,
         "last_payment_date": p.last_payment_date.isoformat() if p.last_payment_date else None,
+        "assessment_class": p.assessment_class,
     }
 
 

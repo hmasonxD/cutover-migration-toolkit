@@ -117,6 +117,32 @@ def map_status(raw: Optional[str]) -> str:
     return _STATUS_MAP[code]
 
 
+# --- assessment class codes --------------------------------------------------
+
+# Legacy clerks typed the class several ways over the years. Every known
+# spelling maps to one of the four Alberta assessment classes.
+_CLASS_MAP = {
+    "R": "RESIDENTIAL", "RES": "RESIDENTIAL",
+    "NR": "NON_RESIDENTIAL", "C": "NON_RESIDENTIAL", "COM": "NON_RESIDENTIAL",
+    "F": "FARMLAND", "FARM": "FARMLAND",
+    "ME": "MACHINERY_EQUIPMENT", "M&E": "MACHINERY_EQUIPMENT",
+}
+
+
+def map_class(raw: Optional[str]) -> str:
+    """Map a legacy class code to its assessment class.
+
+    An unknown code is an exception, never a default: guessing a class would
+    put the property under the wrong tax rate.
+    """
+    if raw is None or str(raw).strip() == "":
+        raise TransformError("missing class code")
+    code = str(raw).strip().upper()
+    if code not in _CLASS_MAP:
+        raise TransformError(f"unknown class code: {raw!r}")
+    return _CLASS_MAP[code]
+
+
 # --- record-level transform ------------------------------------------------
 
 
@@ -129,6 +155,7 @@ class CleanProperty:
     tax_levy: Decimal
     status: str
     last_payment_date: Optional[date]
+    assessment_class: str
 
 
 @dataclass
@@ -160,6 +187,7 @@ def transform_property_row(row: dict) -> CleanProperty:
         tax_levy=parse_money(row.get("tax_levy")),
         status=map_status(row.get("status_cd")),
         last_payment_date=parse_legacy_date(row.get("last_pay_dt")),
+        assessment_class=map_class(row.get("class_cd")),
     )
 
 
