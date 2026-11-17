@@ -15,7 +15,15 @@ CREATE TABLE app.property (
     status TEXT NOT NULL CHECK (
         status IN ('ACTIVE', 'INACTIVE', 'PENDING', 'EXEMPT')
     ),
-    last_payment_date DATE
+    last_payment_date DATE,
+    assessment_class TEXT NOT NULL CHECK (
+        assessment_class IN (
+            'RESIDENTIAL',
+            'NON_RESIDENTIAL',
+            'FARMLAND',
+            'MACHINERY_EQUIPMENT'
+        )
+    )
 );
 CREATE TABLE app.utility_transaction (
     id SERIAL PRIMARY KEY,

@@ -105,15 +105,32 @@ class TestMapStatus:
             t.map_status(raw)
 
 
+class TestMapClass:
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [("R", "RESIDENTIAL"), ("res", "RESIDENTIAL"), (" r ", "RESIDENTIAL"),
+         ("NR", "NON_RESIDENTIAL"), ("C", "NON_RESIDENTIAL"), ("com", "NON_RESIDENTIAL"),
+         ("F", "FARMLAND"), ("Farm", "FARMLAND"),
+         ("ME", "MACHINERY_EQUIPMENT"), ("m&e", "MACHINERY_EQUIPMENT")],
+    )
+    def test_maps_every_legacy_spelling(self, raw, expected):
+        assert t.map_class(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["Q", "", "   ", None, "residential"])
+    def test_rejects_unknown_or_missing(self, raw):
+        with pytest.raises(t.TransformError):
+            t.map_class(raw)
+            
+            
 class TestTransformBatch:
     def test_partitions_clean_from_exceptions(self):
         rows = [
             {"rec_id": 1, "roll_no": "001-2345-00", "owner_name": "SMITH, JOHN",
              "prop_addr": "1 Main", "assessed_val": "$100,000.00", "tax_levy": "$1,250.00",
-             "status_cd": "A", "last_pay_dt": "2024-01-01"},
+             "status_cd": "A", "last_pay_dt": "2024-01-01", "class_cd": "R"},
             {"rec_id": 2, "roll_no": "bad", "owner_name": "X",
              "prop_addr": "", "assessed_val": "$1.00", "tax_levy": "$1.00",
-             "status_cd": "A", "last_pay_dt": ""},
+             "status_cd": "A", "last_pay_dt": "", "class_cd": "R"},
         ]
         result = t.transform_properties(rows)
         assert len(result.clean) == 1
@@ -124,6 +141,6 @@ class TestTransformBatch:
     def test_empty_address_becomes_none(self):
         rows = [{"rec_id": 1, "roll_no": "001234500", "owner_name": "A B",
                  "prop_addr": "   ", "assessed_val": "1", "tax_levy": "1",
-                 "status_cd": "A", "last_pay_dt": ""}]
+                 "status_cd": "A", "last_pay_dt": "", "class_cd": "R"}]
         result = t.transform_properties(rows)
         assert result.clean[0].address is None

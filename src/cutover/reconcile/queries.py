@@ -26,6 +26,7 @@ WITH valid AS (
     WHERE length(regexp_replace(COALESCE(roll_no,''), '\D', '', 'g')) = 9
       AND COALESCE(trim(owner_name), '') <> ''
       AND upper(trim(status_cd)) IN ('A','I','P','X')
+      AND upper(trim(class_cd)) IN ('R','RES','NR','C','COM','F','FARM','ME','M&E')
       AND assessed_val ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
       AND tax_levy ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
       AND (
@@ -39,6 +40,51 @@ WITH valid AS (
 SELECT count(*) AS expected_count, COALESCE(SUM(levy), 0) AS expected_levy
 FROM valid;
 """
+
+# The same migratable set, broken down by assessment class: how many parcels and
+# how much assessed value SHOULD land in each class. The CASE mirrors the Python
+# class map, written independently in SQL, so a mapping bug on either side shows
+# up as a per-class mismatch even when the grand totals still agree.
+VALID_MIGRATABLE_BY_CLASS = r"""
+WITH valid AS (
+    SELECT DISTINCT ON (regexp_replace(roll_no, '\D', '', 'g'))
+        CASE upper(trim(class_cd))
+            WHEN 'R'    THEN 'RESIDENTIAL'
+            WHEN 'RES'  THEN 'RESIDENTIAL'
+            WHEN 'NR'   THEN 'NON_RESIDENTIAL'
+            WHEN 'C'    THEN 'NON_RESIDENTIAL'
+            WHEN 'COM'  THEN 'NON_RESIDENTIAL'
+            WHEN 'F'    THEN 'FARMLAND'
+            WHEN 'FARM' THEN 'FARMLAND'
+            WHEN 'ME'   THEN 'MACHINERY_EQUIPMENT'
+            WHEN 'M&E'  THEN 'MACHINERY_EQUIPMENT'
+        END AS assessment_class,
+        CASE
+            WHEN assessed_val ~ '^\(.*\)$'
+                THEN -1 * replace(replace(replace(trim(both '()' from assessed_val),'$',''),',',''),' ','')::numeric
+            ELSE replace(replace(replace(assessed_val,'$',''),',',''),' ','')::numeric
+        END AS assessed
+    FROM legacy.tax_master
+    WHERE length(regexp_replace(COALESCE(roll_no,''), '\D', '', 'g')) = 9
+      AND COALESCE(trim(owner_name), '') <> ''
+      AND upper(trim(status_cd)) IN ('A','I','P','X')
+      AND upper(trim(class_cd)) IN ('R','RES','NR','C','COM','F','FARM','ME','M&E')
+      AND assessed_val ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
+      AND tax_levy ~ '^\$?\(?-?[0-9,]+(\.[0-9]+)?\)?$'
+      AND (
+            COALESCE(trim(last_pay_dt), '') = ''
+            OR last_pay_dt ~ '^\d{4}-\d{2}-\d{2}$'
+            OR last_pay_dt ~ '^\d{2}/\d{2}/\d{4}$'
+            OR last_pay_dt ~ '^\d{2}-[A-Za-z]{3}-\d{2}$'
+          )
+    ORDER BY regexp_replace(roll_no, '\D', '', 'g'), rec_id
+)
+SELECT assessment_class, count(*) AS parcels, SUM(assessed) AS assessed_total
+FROM valid
+GROUP BY assessment_class
+ORDER BY assessment_class;
+"""
+
 
 # Find duplicate roll numbers in the *legacy* data before they reach the cloud,
 # where roll_number is UNIQUE. CTE + ROW_NUMBER() window partitioned by the

@@ -103,6 +103,67 @@ def check_key_fields_present(client: httpx.Client | None = None, sample: int = 2
     )
 
 
+def class_breakdown(client: httpx.Client | None = None) -> list[dict]:
+    """Per-class comparison of parcel count and assessed value.
+
+    Legacy side: re-derived in SQL. Cloud side: asked through the API. The two
+    systems are separate databases, so the FULL OUTER JOIN happens here: we walk
+    the UNION of class names, and a class missing on one side counts as zero.
+    """
+    client = _api(client)
+    with db.legacy_conn() as conn:
+        legacy = {
+            r["assessment_class"]: r
+            for r in db.query_all(conn, queries.VALID_MIGRATABLE_BY_CLASS)
+        }
+    cloud = {c["assessment_class"]: c for c in client.get("/recon/by-class").json()["classes"]}
+
+    rows = []
+    for cls in sorted(set(legacy) | set(cloud)):
+        legacy_row, cloud_row = legacy.get(cls), cloud.get(cls)
+        legacy_count = legacy_row["parcels"] if legacy_row else 0
+        cloud_count = cloud_row["parcels"] if cloud_row else 0
+        legacy_value = Decimal(str(legacy_row["assessed_total"])) if legacy_row else Decimal("0")
+        cloud_value = Decimal(cloud_row["assessed_total"]) if cloud_row else Decimal("0")
+        rows.append(
+            {
+                "assessment_class": cls,
+                "legacy_count": legacy_count,
+                "cloud_count": cloud_count,
+                "legacy_value": legacy_value,
+                "cloud_value": cloud_value,
+                "match": legacy_count == cloud_count and legacy_value == cloud_value,
+            }
+        )
+    return rows
+
+
+def check_class_reconciliation(client: httpx.Client | None = None) -> CheckResult:
+    """Parcel count AND assessed value must match in every assessment class.
+
+    Grand totals can agree while a parcel sits in the wrong class, and the class
+    decides the tax rate - so this is checked per class, not just overall.
+    """
+    rows = class_breakdown(client)
+    bad = [r for r in rows if not r["match"]]
+    detail = (
+        "; ".join(
+            f"{r['assessment_class']}: count {r['legacy_count']} vs {r['cloud_count']}, "
+            f"value {r['legacy_value']} vs {r['cloud_value']}"
+            for r in bad
+        )
+        if bad
+        else f"{len(rows)} classes match on count and assessed value"
+    )
+    return CheckResult(
+        name="class_code_reconciliation",
+        passed=not bad,
+        legacy_value=sum(r["legacy_count"] for r in rows),
+        cloud_value=sum(r["cloud_count"] for r in rows),
+        detail=detail,
+    )
+    
+
 def find_balance_exceptions() -> list[dict]:
     """Accounts whose legacy stored ledger balance disagrees with the running
     balance recomputed from their transactions. These are pre-existing legacy
@@ -124,6 +185,7 @@ def run_all_checks(client: httpx.Client | None = None) -> list[CheckResult]:
             check_record_counts(client),
             check_levy_total(client),
             check_key_fields_present(client),
+            check_class_reconciliation(client),
         ]
     finally:
         if owns:
