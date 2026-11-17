@@ -8,8 +8,8 @@ system, loads it into a cloud platform through that platform's API, and then
 before go-live.
 
 It's built to mirror the real shape of a legacy-to-cloud cutover: dirty source
-data, an API-based target, control-total reconciliation, exception reporting,
-and automated tests at every layer.
+data, an API-based target, control-total reconciliation, reconciliation by
+assessment class, exception reporting, and automated tests at every layer.
 
 ## Why it's built this way
 
@@ -26,18 +26,47 @@ invented, and the money still adds up. So the design separates two concerns:
 
 Running the reconciliation against the seeded data produces:
 
-| Check                  | Result | Legacy | Cloud  | Detail                    |
-| ---------------------- | ------ | ------ | ------ | ------------------------- |
-| record_count_parity    | PASS   | 120    | 120    | SQL-derived vs cloud rows |
-| tax_levy_control_total | PASS   | 574845 | 574845 | variance=0.00             |
-| key_field_verification | PASS   | 25     | 25     | 25 sampled rolls present  |
+| Check                     | Result | Legacy | Cloud  | Detail                                      |
+| ------------------------- | ------ | ------ | ------ | ------------------------------------------- |
+| record_count_parity       | PASS   | 120    | 120    | SQL-derived vs cloud rows                   |
+| tax_levy_control_total    | PASS   | 574845 | 574845 | variance=0.00                               |
+| key_field_verification    | PASS   | 25     | 25     | 25 sampled rolls present                    |
+| class_code_reconciliation | PASS   | 120    | 120    | 4 classes match on count and assessed value |
+
+### Reconciliation by assessment class
+
+Grand totals can match while a parcel sits in the wrong class, and the class
+decides the tax rate. So parcel count and assessed value are also reconciled
+per assessment class:
+
+| Class               | Legacy # | Cloud # |  Legacy value |   Cloud value |     |
+| ------------------- | -------: | ------: | ------------: | ------------: | --- |
+| FARMLAND            |       20 |      20 |  8,145,874.22 |  8,145,874.22 | OK  |
+| MACHINERY_EQUIPMENT |       20 |      20 |  6,825,765.37 |  6,825,765.37 | OK  |
+| NON_RESIDENTIAL     |       30 |      30 | 11,406,920.50 | 11,406,920.50 | OK  |
+| RESIDENTIAL         |       50 |      50 | 19,609,034.81 | 19,609,034.81 | OK  |
+
+Legacy clerks typed the class nine different ways (`R`, `RES`, `r`, `NR`, `C`,
+`com`, `F`, `FARM`, `ME`, `M&E`). Each known spelling maps to one of four
+assessment classes; an unknown code is quarantined as an exception, never
+guessed. The legacy side of the comparison is derived in SQL and the cloud side
+comes from the API, so the class mapping is implemented twice and must agree.
+
+A test proves why this check exists: it moves one residential parcel to
+farmland in the cloud. Record-count parity and the levy control total still
+pass. Only the class-code reconciliation fails.
+
+### Injected defects
 
 The seed deliberately injects defects so the pipeline has something real to
 catch: a duplicate roll, a malformed roll, unparseable money, an unknown status
-code, an unrecognized date, a missing owner, and one utility account whose
-stored balance drifted from its true transaction history. Five rows are
-quarantined as exceptions (with reasons); the balance drift is found by a window
-function recomputing the ledger from first principles.
+code, an unrecognized date, a missing owner, an unknown assessment class code,
+and one utility account whose stored balance drifted from its true transaction
+history. Six rows are quarantined as exceptions (with reasons); the balance
+drift is found by a window function recomputing the ledger from first principles.
+
+Every transformation rule, its failure reason, and the open questions for the
+client are documented in the [mapping specification](docs/mapping.md).
 
 ## Screenshots
 
@@ -94,6 +123,10 @@ Prereqs: PostgreSQL running locally with two databases, `legacy_muni` and
     python -m scripts.run_migration
     python -m scripts.run_reconciliation
 
+The tests reuse the same two databases and reseed them, so run
+`python -m scripts.setup_db` again after a test run to get back to the figures
+shown above.
+
 ## Tests
 
     python -m pytest                # full suite
@@ -109,6 +142,7 @@ browser over the dashboard.
 - **Python + test automation** — PyTest across unit, integration, and Playwright e2e layers, run in CI on every push.
 - **API-based validation** — the migration loads through a FastAPI cloud target, and reconciliation queries that API and checks it against legacy SQL.
 - **Advanced PostgreSQL** — CTEs, window functions, PL/pgSQL stored procedures, and dynamic SQL drive the reconciliation and anomaly detection.
-- **ETL & data cleansing** — pure, unit-tested rules normalize dirty legacy text (money, dates, roll numbers, names, status codes) into typed cloud records.
-- **Reconciliation & exception reporting** — record-count parity, financial control totals, key-field verification, duplicate detection, and a persisted exception log.
+- **ETL & data cleansing** — pure, unit-tested rules normalize dirty legacy text (money, dates, roll numbers, names, status codes, assessment class codes) into typed cloud records.
+- **Reconciliation & exception reporting** — record-count parity, financial control totals, reconciliation by assessment class, key-field verification, duplicate detection, and a persisted exception log.
+- **Mapping documentation** — a source-to-target mapping specification with every rule, its exception reason, and the open questions for client sign-off.
 - **CI/CD** — GitHub Actions provisions a real Postgres, runs the full suite, and gates every change.
